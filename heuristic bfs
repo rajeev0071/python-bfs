@@ -1,0 +1,135 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import LeaveOneOut
+from sklearn.metrics import accuracy_score
+from sklearn.feature_selection import mutual_info_classif,f_classif,chi2
+from sklearn.feature_selection import SelectKBest
+from scipy.stats import mstats
+from sklearn.svm import SVC
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import VotingClassifier
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import BaggingClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+data=pd.read_csv("E:/projects/colon",sep="\t",skiprows=1)
+features=data.iloc[:,:2000]
+target=data.iloc[:,2000]
+target=target.astype(int)
+features_list=[]
+accuracy_list=[]
+total_features=[]
+chi_Count=50
+Anova_Count=50
+InfoGain_Count=50
+level_count=0
+Max_level=30
+knn = KNeighborsClassifier(n_neighbors=5)
+adaboost=AdaBoostClassifier(n_estimators=50)
+baggingClassifier=BaggingClassifier(base_estimator=DecisionTreeClassifier(),n_estimators=10,max_samples=0.5, max_features=0.5)
+chi2_selector = SelectKBest(chi2, k=chi_Count)
+chi_features_kbest=chi2_selector.fit_transform(features,target)
+chi_features_kbest_df=pd.DataFrame(data=chi_features_kbest[:,:])
+print('Set of relevant features considering Chi2 scores:')
+print(chi_features_kbest_df)
+ANOVA_selector = SelectKBest(f_classif, k=Anova_Count)
+ANOVA_features_kbest=ANOVA_selector.fit_transform(features,target)
+ANOVA_features_kbest_df=pd.DataFrame(data=ANOVA_features_kbest[:,:])
+print('Set of relevant features considering ANOVA scores:')
+print(ANOVA_features_kbest_df)
+InfoGain_selector = SelectKBest(mutual_info_classif, k=InfoGain_Count)
+InfoGain_features_kbest=InfoGain_selector.fit_transform(features,target)
+InfoGain_features_kbest_df=pd.DataFrame(data=chi_features_kbest[:,:])
+print('Set of relevant features considering InfoGain scores:')
+print(InfoGain_features_kbest_df)
+final_features=np.concatenate((chi_features_kbest,ANOVA_features_kbest,InfoGain_features_kbest),axis=1)
+final_features_kbest_df=pd.DataFrame(data=final_features[:,:])
+final_features_kbest_df=final_features_kbest_df.T.drop_duplicates().T
+total_columns=len(final_features_kbest_df.columns)
+features_union=np.array(final_features_kbest_df)
+print('Aggregated Set of features:')
+print(final_features_kbest_df)
+
+def train_test_classifier(variables,classifier):
+    ytests = []
+    ypreds = []
+    loo = LeaveOneOut()
+    for train_index, test_index in loo.split(variables):
+        X_train, X_test = variables[train_index], variables[test_index]
+        Y_train, Y_test = target[train_index], target[test_index]
+        #knn = KNeighborsClassifier(n_neighbors=5)
+        classifier.fit(X_train, Y_train)
+        Y_pred = classifier.predict(X_test)
+        ypreds += list(Y_pred)
+        ytests += list(Y_test)
+    return ytests,ypreds
+
+
+def find_score(columns):
+    selected_df=pd.DataFrame()
+    for col in columns:
+        selection = final_features[:, col].reshape(61, 1)
+        selection_df = pd.DataFrame(data=selection[:, :])
+        selected_df = pd.concat([selected_df, selection_df], axis=1)
+    selected_arr = np.array(selected_df)
+    true,predicted=train_test_classifier(selected_arr,knn)
+    accuracy=accuracy_score(true,predicted)
+    return accuracy
+
+
+
+for i in range(total_columns):
+    feat_list=[]
+    variables=[]
+    feat_list.append(i)
+    feature=features_union[:,i].reshape(61,1)
+    score=find_score(feat_list)
+    variables.append(i)
+    features_list.append(variables)
+    accuracy_list.append(score)
+print("Level {}:".format(level_count+1))
+print(features_list)
+print(accuracy_list)
+level_count=level_count+1
+
+
+
+
+while(level_count<Max_level):
+    performance_score=[]
+    temporary= []
+    for l in features_list:
+        current = list(l)
+        current_accuracy=find_score(current)
+        for i in range(total_columns):
+            if i in l:
+                pass
+            else:
+                #variables = []
+                variables = list(current)
+                variables.append(i)
+                scores = find_score(variables)
+                if scores>=0.85 and scores>current_accuracy:
+                    temporary.append(variables)
+                    performance_score.append(scores)
+    features_list = list(temporary)
+    accuracy = list(performance_score)
+
+    if features_list:
+        print("Level {}".format(level_count + 1))
+        print(features_list)
+        print(accuracy)
+        total_features=list(features_list)
+    else:
+        break
+    level_count = level_count + 1
+for t in total_features:
+    t.sort()
+total_features=[list(x) for x in set([tuple(x) for x in total_features])]
+print("Final set of features:")
+print(total_features)
+
+
+
